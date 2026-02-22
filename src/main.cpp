@@ -5,7 +5,7 @@
 #include <Arduino.h>
 #include <Adafruit_PWMServoDriver.h>
 #include <SPI.h>
-
+#include "oledScreen.h"
 // Define section
 #define SCREEN_W 128
 #define SCREEN_H 64
@@ -16,8 +16,10 @@
 
 // OLED, PCA, RTC objects
 Adafruit_SSD1306 display(SCREEN_W, SCREEN_H, &Wire, OLED_RESET);
+oledScreen playAnimation(display);
+
+
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
-RTC_DS1307 rtc;
 
 // Mood enum
 enum Moods {
@@ -42,72 +44,56 @@ const uint8_t rgbBluePin = 4;
 
 // Error codes
 const unsigned short int DISP_ERR = 2;
-const unsigned short int RTC_ERR  = 3;
-
 // Timing
 unsigned long lastMillis = 0;
+bool tiltState = false;
+bool lastTiltState = false;
+unsigned long lastTiltchange = 0;
+const unsigned long debounceMs = 50;
+bool readTiltDebounced() {
+    bool reading = (digitalRead(tiltPin) == LOW);
+    if (reading != lastTiltState) {
+        lastTiltchange = millis();
+        lastTiltState = reading;
+    }
+    if (millis() - lastTiltchange > debounceMs) {
+        tiltState = reading;
+    }
+    return tiltState;
+}
 
 void setup() {
     Serial.begin(115200);
     Wire.begin(OLED_SDA, OLED_SCL);
+    pinMode(tiltPin, INPUT_PULLUP);
 
     // Initialize display
     if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
         Serial.println(DISP_ERR);
         while (1);
     }
+    playAnimation.begin();
 
-    // Initialize RTC
-    if (!rtc.begin()) {
-        Serial.println(RTC_ERR);
-        while (1);
-    }
-    if (!rtc.isrunning()) {
-        rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-    }
 
-    // Optional: show a startup circle (will disappear after first loop)
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setTextColor(WHITE);
-    display.drawCircle(SCREEN_W/2, SCREEN_H/2, 3, WHITE);
-    display.display();
+
 }
+bool lastTilt = false;
 
 void loop() {
-    unsigned long currentMillis = millis();
-
-    // Update display at interval
-    if (currentMillis - lastMillis >= EXE_DELAY) {
-        lastMillis = currentMillis;
-
-        DateTime now = rtc.now();
-
-        // Clear the display before writing new text (removes circle)
-        display.clearDisplay();
-
-        display.setCursor(0, 0);
-        display.setTextSize(1);
-        display.setTextColor(WHITE);
-
-        // Print date
-        display.print(now.year(), DEC);
-        display.print('/');
-        display.print(now.month(), DEC);
-        display.print('/');
-        display.println(now.day(), DEC);
-
-        // Print time
-        display.print(now.hour(), DEC);
-        display.print(':');
-        display.print(now.minute(), DEC);
-        display.print(':');
-        display.println(now.second(), DEC);
-
-        display.display();
+    bool tilted = readTiltDebounced();
+    if (tilted && !lastTiltState) {
+        playAnimation.begin();
     }
+    if (tilted) {
+        playAnimation.update();
+    }
+    lastTilt = tilted;
 
-    // Mood logic placeholder
+playAnimation.update();
+
+
+
+    // Mood logic
     switch (current_mood) {
         case IDLE:
             break;
